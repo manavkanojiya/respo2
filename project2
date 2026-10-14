@@ -1,0 +1,232 @@
+import os
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from docx import Document
+from docx.shared import Inches, Pt, RGBColor
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml import parse_xml
+from docx.oxml.ns import nsdecls
+
+# ==============================================================================
+# 1. DIRECTORY STRUCTURE SETUP
+# ==============================================================================
+os.makedirs('temp', exist_ok=True)
+os.makedirs('generated', exist_ok=True)
+
+# ==============================================================================
+# 2. SYNTHETIC DATA GENERATION & SEEDING (Simulating Messy Source Data)
+# ==============================================================================
+np.random.seed(42)
+n_rows = 100
+
+data = {
+    'Transaction_ID': [f"TXN_{1000 + i}" for i in range(n_rows)],
+    'Date': pd.date_range(start='2026-01-01', periods=n_rows, freq='D'),
+    'Product_Category': np.random.choice(['Electronics', 'Clothing', 'Home', 'Beauty'], size=n_rows),
+    'Units_Sold': np.random.choice([1, 2, 3, 4, 5, np.nan], size=n_rows, p=[0.3, 0.3, 0.2, 0.1, 0.05, 0.05]),
+    'Unit_Price': np.random.uniform(15.0, 500.0, size=n_rows).round(2),
+    'Customer_Rating': np.random.choice([1.0, 2.0, 3.0, 4.0, 5.0, np.nan], size=n_rows, p=[0.05, 0.1, 0.2, 0.3, 0.3, 0.05]),
+    'Payment_Method': np.random.choice(['Credit Card', 'PayPal', 'Cash', 'credit card', 'PAYPAL'], size=n_rows)
+}
+
+df_raw = pd.DataFrame(data)
+# Inject manual duplicate blocks to test clean pipelines
+df_raw = pd.concat([df_raw, df_raw.iloc[:5]], ignore_index=True)
+df_raw['Unit_Price'] = df_raw['Unit_Price'].astype(str) # Cast to string to simulate anomalies
+
+# ==============================================================================
+# 3. DATA CLEANING & MANIPULATION PIPELINE
+# ==============================================================================
+df = df_raw.copy()
+
+# Step 1: Type Coercion
+df['Unit_Price'] = pd.to_numeric(df['Unit_Price'], errors='coerce')
+
+# Step 2: String Text Uniformity
+df['Payment_Method'] = df['Payment_Method'].str.upper().str.strip()
+
+# Step 3: Imputation Frameworks
+df['Units_Sold'] = df['Units_Sold'].fillna(df['Units_Sold'].median())
+df['Customer_Rating'] = df['Customer_Rating'].fillna(df['Customer_Rating'].mean().round(1))
+
+# Step 4: Redundancy Clearout
+df.drop_duplicates(inplace=True)
+df.reset_index(drop=True, inplace=True)
+
+# Step 5: Feature Engineering & Aggregations
+df['Total_Revenue'] = df['Units_Sold'] * df['Unit_Price']
+category_summary = df.groupby('Product_Category').agg(
+    Total_Sales_Revenue=('Total_Revenue', 'sum'),
+    Average_Units_Sold=('Units_Sold', 'mean'),
+    Average_Rating=('Customer_Rating', 'mean')
+).reset_index()
+
+# ==============================================================================
+# 4. CHART GENERATION AND HIGH-RESOLUTION SAVES
+# ==============================================================================
+sns.set_theme(style="whitegrid")
+
+# Chart 1: Bar Chart
+plt.figure(figsize=(7, 3.5))
+sns.barplot(data=category_summary, x='Product_Category', y='Total_Sales_Revenue', palette='Blues_r')
+plt.title('Total Revenue Generation by Product Category', fontsize=12, fontweight='bold', pad=10)
+plt.xlabel('Product Category', fontsize=10)
+plt.ylabel('Total Revenue ($)', fontsize=10)
+plt.tight_layout()
+chart1_path = 'temp/chart1_bar.png'
+plt.savefig(chart1_path, dpi=200)
+plt.close()
+
+# Chart 2: Histogram
+plt.figure(figsize=(7, 3.5))
+sns.histplot(data=df, x='Total_Revenue', bins=20, kde=True, color='purple')
+plt.title('Distribution Spectrum of Transaction Revenues', fontsize=12, fontweight='bold', pad=10)
+plt.xlabel('Total Revenue ($)', fontsize=10)
+plt.ylabel('Transaction Count', fontsize=10)
+plt.tight_layout()
+chart2_path = 'temp/chart2_hist.png'
+plt.savefig(chart2_path, dpi=200)
+plt.close()
+
+# Chart 3: Scatter Plot
+plt.figure(figsize=(7, 3.5))
+sns.scatterplot(data=df, x='Unit_Price', y='Customer_Rating', hue='Product_Category', palette='Set2', alpha=0.8)
+plt.title('Analysis of Unit Price vs. Customer Rating', fontsize=12, fontweight='bold', pad=10)
+plt.xlabel('Unit Price ($)', fontsize=10)
+plt.ylabel('Customer Rating (1-5)', fontsize=10)
+plt.legend(title='Category', bbox_to_anchor=(1.05, 1), loc='upper left')
+plt.tight_layout()
+chart3_path = 'temp/chart3_scatter.png'
+plt.savefig(chart3_path, dpi=200)
+plt.close()
+
+# Chart 4: Box Plot
+plt.figure(figsize=(7, 3.5))
+sns.boxplot(data=df, x='Product_Category', y='Customer_Rating', palette='Pastel1')
+plt.title('Customer Rating Distribution Across Domains', fontsize=12, fontweight='bold', pad=10)
+plt.xlabel('Product Category', fontsize=10)
+plt.ylabel('Rating Score', fontsize=10)
+plt.tight_layout()
+chart4_path = 'temp/chart4_box.png'
+plt.savefig(chart4_path, dpi=200)
+plt.close()
+
+# Chart 5: Line Chart
+plt.figure(figsize=(7, 3.5))
+sns.lineplot(data=df.sort_values('Date'), x='Date', y='Total_Revenue', color='teal', linewidth=1.5)
+plt.title('Chronological Daily Gross Revenue Trend', fontsize=12, fontweight='bold', pad=10)
+plt.xlabel('Transaction Date', fontsize=10)
+plt.ylabel('Revenue ($)', fontsize=10)
+plt.xticks(rotation=30)
+plt.tight_layout()
+chart5_path = 'temp/chart5_line.png'
+plt.savefig(chart5_path, dpi=200)
+plt.close()
+
+# ==============================================================================
+# 5. DOCUMENT GENERATION INTERNALS (python-docx)
+# ==============================================================================
+doc = Document()
+
+# Define Uniform Page Geometry Margins
+for section in doc.sections:
+    section.top_margin = Inches(1)
+    section.bottom_margin = Inches(1)
+    section.left_margin = Inches(1)
+    section.right_margin = Inches(1)
+
+# Helper Typography Functions
+def add_heading_styled(text, level, space_before=12, space_after=6):
+    heading = doc.add_heading(text, level=level)
+    heading.paragraph_format.space_before = Pt(space_before)
+    heading.paragraph_format.space_after = Pt(space_after)
+    heading.paragraph_format.keep_with_next = True
+    run = heading.runs[0]
+    run.font.name = 'Arial'
+    if level == 1:
+        run.font.size = Pt(16)
+        run.font.color.rgb = RGBColor(0x1B, 0x36, 0x5D) # Executive Navy
+    elif level == 2:
+        run.font.size = Pt(13)
+        run.font.color.rgb = RGBColor(0x4A, 0x77, 0x7A) # Muted Teal Blue
+    return heading
+
+def add_body_paragraph(text, bold_prefix="", space_after=6):
+    p = doc.add_paragraph()
+    p.paragraph_format.space_after = Pt(space_after)
+    p.paragraph_format.line_spacing = 1.15
+    if bold_prefix:
+        r_bold = p.add_run(bold_prefix)
+        r_bold.font.name = 'Arial'
+        r_bold.font.size = Pt(11)
+        r_bold.bold = True
+    r_text = p.add_run(text)
+    r_text.font.name = 'Arial'
+    r_text.font.size = Pt(11)
+    return p
+
+def add_code_block(code_text):
+    p = doc.add_paragraph()
+    p.paragraph_format.left_indent = Inches(0.25)
+    p.paragraph_format.right_indent = Inches(0.25)
+    p.paragraph_format.space_before = Pt(6)
+    p.paragraph_format.space_after = Pt(6)
+    
+    # Render soft background frame shading via inline XML elements
+    pPr = p._p.get_or_add_pPr()
+    shd = parse_xml(f'<w:shd {nsdecls("w")} w:fill="F2F2F2"/>')
+    pPr.append(shd)
+    
+    run = p.add_run(code_text)
+    run.font.name = 'Consolas'
+    run.font.size = Pt(9.5)
+    run.font.color.rgb = RGBColor(0x22, 0x22, 0x22)
+    return p
+
+# --- BUILD CONTENT SECTIONS ---
+
+# Title
+title_p = doc.add_paragraph()
+title_p.paragraph_format.space_after = Pt(18)
+title_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+run_title = title_p.add_run("Hands-On Data Lab: Technical Implementation & Analysis Report")
+run_title.font.name = 'Arial'
+run_title.font.size = Pt(22)
+run_title.bold = True
+run_title.font.color.rgb = RGBColor(0x1B, 0x36, 0x5D)
+
+# Section 1
+add_heading_styled("Section 1: Configuration Environment Setup", level=1)
+add_body_paragraph("To configure a predictable and completely isolated processing workspace for this engineering environment, execute the structural commands below inside your local system command line interface:")
+add_code_block(
+    "# 1. Initialize virtual sub-environment framework\n"
+    "python -m venv data_lab_env\n\n"
+    "# 2. Environment system context activation mapping\n"
+    "data_lab_env\\Scripts\\activate   # For Windows Architecture Platforms\n"
+    "source data_lab_env/bin/activate # For Unix, macOS, & Linux Architecture Systems\n\n"
+    "# 3. Execute core package module installations\n"
+    "pip install notebook pandas numpy matplotlib seaborn"
+)
+
+# Section 2
+add_heading_styled("Section 2: Data Ingestion Pipeline", level=1)
+add_body_paragraph("To guarantee an end-to-end reproducible pipeline, we programmatically load our raw E-Commerce Performance Dataset into the runtime framework to map original structures.")
+add_code_block(
+    "# Ingest baseline data frame architecture\n"
+    "df = pd.read_csv('ecommerce_sales_raw.csv')\n\n"
+    "# Structural Profile Diagnostics Assessment\n"
+    "print(df.info())\n"
+    "print(df.isnull().sum())"
+)
+
+# Section 3
+add_heading_styled("Section 3: Data Cleaning Framework Matrix", level=1)
+add_body_paragraph("The dataset requires four critical data clearing steps before exploratory calculations or charting:")
+add_body_paragraph(" Convert text strings to explicit floating-point decimals to enable mathematical tracking.", bold_prefix="1. Type Conversion: ")
+add_body_paragraph(" Standardize all string spaces and upper-case discrepancies in transactional strings.", bold_prefix="2. Text Uniformity: ")
+add_body_paragraph(" Handle blank inputs by applying median value metrics for missing physical quantities and mean scores for user ratings.", bold_prefix="3. Missing Imputation: ")
+add_body_paragraph(" Identify and delete redundant transactional rows to protect statistical accuracy.", bold_prefix="4. Duplicate Removal: ")
+add_code_block(
+    "df['Unit_Price'] = pd.to_numeric(df['Unit_Price'], errors='coerce')\n"
